@@ -1,18 +1,22 @@
 import requests
 import json
+import sys
 
 from requests.auth import HTTPBasicAuth
 
+if sys.version_info[0] < 3:
+    from urllib import urlencode
+else:
+    from urllib.parse import urlencode
 
-def mailjet_integration_handler(request, integration):
+
+def hubspot_integration_handler(request, integration):
     """
-    Simple API client for mailjet.com.
+    Simple API client for hubspot.com.
     Creates a user with specified name and email, and puts him into the list
 
     Integration object should include:
-    - api_key - api key for mailjet.com API
-    - secret_key - secret key for mailjet.com API
-    - list ID - list ID for adding contact in mailjet.com API
+    - api_key - hapikey for hubspot.com API
 
     :param request: standard django request object with a custom user object
     :param integration: defined in the admin panel and populated from the client business console based on
@@ -21,80 +25,35 @@ def mailjet_integration_handler(request, integration):
     """
 
     api_key = integration.parameters.get(name='api_key').value
-    secret_key = integration.parameters.get(name='secret_key').value
-    list_id = integration.parameters.get(name='list_id').value
 
-    api_url = "https://api.mailjet.com/v3/REST/contactslist/{}/ManageManyContacts".format(list_id)
+    params = {
+        "hapikey": api_key
+    }
 
     data = {
-        "Action": "addnoforce",
-        "Contacts": [
+        "properties": [
             {
-                "Email": request.user.email,
-                "Properties": {
-                        "FirstName": request.user.first_name,
-                        "Name": request.user.last_name
-                }
-            }
+              "property": "email",
+              "value": request.user.email
+            },
+            {
+              "property": "firstname",
+              "value": request.user.first_name
+            },
+            {
+              "property": "lastname",
+              "value": request.user.last_name
+            },
         ]
     }
 
-    response = requests.post(
-        api_url,
-        auth=HTTPBasicAuth(api_key, secret_key),
-        headers={
-            'content-type': 'application/json'
-        },
-        data=json.dumps(data)
-    )
+    base_url = "https://api.hubapi.com/contacts/v1/"
+    create_url = base_url + "contact/"
+
+    response = requests.post(create_url, data=json.dumps(data), params=urlencode(params)).text
 
     result = {
-        'r': response.text,
-        'data_sent': data,
-        'api_url': api_url
-    }
-
-    return result
-
-
-def mailerlite_integration_handler(request, integration):
-    """
-    Simple API client for mailerlite.com.
-    Creates a user with specified name and email, and puts him into the list
-
-    Integration object should include:
-    - api_key - api key for mailerlite.com API
-    - group - group for adding subscriber in mailerlite.com API
-
-    :param request: standard django request object with a custom user object
-    :param integration: defined in the admin panel and populated from the client business console based on
-    the variable data needed to complete an API task
-    :return: dictionary of request data, response data, request url
-    """
-
-    api_key = integration.parameters.get(name='api_key').value
-    group = integration.parameters.get(name='group').value
-
-    base_url = "https://api.mailerlite.com/api/v2/"
-    create_url = base_url + "groups/{}/subscribers".format(group)
-
-    data = {
-        "email": request.user.email,
-        "name": request.user.first_name,
-        "fields": {
-            "last_name": request.user.last_name
-        }
-    }
-
-    headers = {
-        'content-type': "application/json",
-        'x-mailerlite-apikey': api_key
-    }
-
-    response = requests.post(create_url, data=json.dumps(data), headers=headers)
-
-    result = {
-        'r': response.text,
+        'r': response,
         'data_sent': data,
         'api_url': create_url
     }
@@ -102,14 +61,14 @@ def mailerlite_integration_handler(request, integration):
     return result
 
 
-def ontraport_integration_handler(request, integration):
+def highrise_integration_handler(request, integration):
     """
-    Simple API client for ontraport.com.
+    Simple API client for highrisehq.com.
     Creates a user with specified name and email, and puts him into the list
 
     Integration object should include:
-    - api_key - API key for ontraport.com API
-    - api_app_id - API App ID for ontraport.com API
+    - api_key - token for highrisehq.com API
+    - company - company name for highrisehq.com API
 
     :param request: standard django request object with a custom user object
     :param integration: defined in the admin panel and populated from the client business console based on
@@ -118,25 +77,35 @@ def ontraport_integration_handler(request, integration):
     """
 
     api_key = integration.parameters.get(name='api_key').value
-    api_app_id = integration.parameters.get(name='api_app_id').value
+    company = integration.parameters.get(name='company').value
 
-    api_url = "https://api.ontraport.com/1/objects"
+    params = {}
 
-    data = {
-        "objectID": 0,
-        "email": request.user.email,
-        "firstname": request.user.first_name,
-        "lastname": request.user.last_name
-    }
+    data = """<?xml version='1.0' encoding='utf-8'?>
+    <person>
+        <first_name>{}</first_name>
+        <last_name>{}</last_name>
+        <contact-data>
+            <email_addresses>
+                <email-address>
+                    <address>{}</address>
+                </email-address>
+            </email_addresses>
+        </contact-data>
+    </person>""".format(request.user.first_name, request.user.last_name, request.user.email)
 
-    headers = {
-        'Content-Type': "application/json",
-        'Accept': 'text/html',
-        'Api-Key': api_key,
-        'Api-Appid': api_app_id
-    }
+    api_url = 'https://{}.highrisehq.com/people.xml'.format(company, params)
 
-    response = requests.post(api_url, data=json.dumps(data), headers=headers)
+    response = requests.post(
+        api_url,
+        auth=HTTPBasicAuth(api_key, "X"),
+        headers={
+            'User-Agent': '',
+            'content-type': 'application/xml'
+        },
+        params=params,
+        data=data
+    )
 
     result = {
         'r': response.text,
